@@ -53,7 +53,7 @@ if [ -n "$SPECLIB_FILE" ]; then
     --lib /work/lib/$(basename "$SPECLIB_FILE") \
     --threads 64 \
     --verbose 1 \
-    --out $OUTDIR/no_norm_report.parquet \
+    --out $OUTDIR/report.parquet \
     --qvalue 0.01 \
     --matrices \
     --out-lib $OUTDIR/report-lib.parquet \
