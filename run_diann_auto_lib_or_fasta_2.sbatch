@@ -2,15 +2,15 @@
 #SBATCH --job-name=diann_multi_fasta
 #SBATCH --cpus-per-task=64
 #SBATCH --mem=512G
-#SBATCH --time=24:00:00
 #SBATCH -o diann.%j.out
 #SBATCH -e diann.%j.err
 #SBATCH --account=genome-center-grp
-#SBATCH --time=24:00:00
+#SBATCH --time=12:00:00
 #SBATCH --partition=high
 
 # -------------------- USER PATHS --------------------
-WORKDIR=/quobyte/proteomics-grp/brett/OT_flex_salmon
+# use the directory where the job is launched as the working directory
+WORKDIR=$(pwd)
 IMG=$WORKDIR/diann2.3.0.sif
 DATA_DIR=$WORKDIR/data
 FASTA_DIR=$WORKDIR/fasta
@@ -34,10 +34,24 @@ fi
 
 # ----- BUILD FASTA LIST (used by both library and library-free modes) -----
 FASTA_ARGS=""
+OUT_LIB_BASENAME=""
 for fa in "$FASTA_DIR"/*.fasta "$FASTA_DIR"/*.fa; do
   [ -e "$fa" ] || continue
   FASTA_ARGS+=" --fasta /work/fasta/$(basename "$fa")"
+  base=$(basename "$fa")
+  name_without_ext=${base%.*}
+  if [ -z "$OUT_LIB_BASENAME" ]; then
+    OUT_LIB_BASENAME="$name_without_ext"
+  else
+    OUT_LIB_BASENAME="${OUT_LIB_BASENAME}_$name_without_ext"
+  fi
 done
+
+# if there were no FASTAs, fall back to a default name
+if [ -z "$OUT_LIB_BASENAME" ]; then
+  OUT_LIB_BASENAME="report-lib"
+fi
+OUT_LIB_PATH="$OUTDIR/${OUT_LIB_BASENAME}.parquet"
 
 # -------------------- DETECT SPECTRAL LIBRARY --------------------
 SPECLIB_FILE=$(ls "$LIB_DIR"/*.speclib 2>/dev/null | head -n 1)
@@ -53,10 +67,10 @@ if [ -n "$SPECLIB_FILE" ]; then
     --lib /work/lib/$(basename "$SPECLIB_FILE") \
     --threads 64 \
     --verbose 1 \
-    --out $OUTDIR/report.parquet \
+    --out $OUTDIR/no_norm_report.parquet \
     --qvalue 0.01 \
     --matrices \
-    --out-lib $OUTDIR/report-lib.parquet \
+    --out-lib $OUT_LIB_PATH \
     --gen-spec-lib \
     --xic \
     --unimod4 \
@@ -67,7 +81,7 @@ if [ -n "$SPECLIB_FILE" ]; then
     --peptidoforms \
     --reanalyse \
     --rt-profiling \
-	--use-quant
+    --use-quant
 
 # -------------------- ELSE RUN FASTA SEARCH --------------------
 else
@@ -81,35 +95,31 @@ else
   apptainer exec --bind $WORKDIR:/work $IMG /diann-2.3.0/diann-linux \
     $RUN_ARGS \
     $FASTA_ARGS \
-  --out $OUTDIR/report.parquet \
-  --out-lib $OUTDIR/report-lib.parquet \
-  --matrices \
-  --fasta-search \
-  --qvalue 0.01 \
-  --gen-spec-lib \
-  --verbose 1 \
-  --gen-spec-lib \
-  --predictor \
-  --xic \
-  --threads 64 \
-  --met-excision \
-  --min-pep-len 7 \
-  --max-pep-len 30 \
-  --min-pr-mz 300 \
-  --max-pr-mz 1200 \
-  --min-pr-charge 1 \
-  --max-pr-charge 4 \
-  --min-fr-mz 200 \
-  --max-fr-mz 1200 \
-  --cut K*,R* \
-  --missed-cleavages 1 \
-  --unimod4 \
-  --var-mods 1 \
-  --window 6 \
-  --mass-acc 14 \
-  --mass-acc-ms1 14 \
-  --reanalyse \
-  --rt-profiling 
+    --out $OUTDIR/report.parquet \
+    --out-lib $OUT_LIB_PATH \
+    --matrices \
+    --fasta-search \
+    --qvalue 0.01 \
+    --gen-spec-lib \
+    --predictor \
+    --relaxed-prot-inf \
+    --library-coverage 1 \
+    --peak-centroid \
+    --smart-profiling \
+    --mass-acc-fr 14 \
+    --gg-disable \
+    --max-pr-charge 4 \
+    --min-fr-mz 200 \
+    --max-fr-mz 1200 \
+    --cut K*,R* \
+    --missed-cleavages 1 \
+    --unimod4 \
+    --var-mods 1 \
+    --window 6 \
+    --mass-acc 14 \
+    --mass-acc-ms1 14 \
+    --reanalyse \
+    --rt-profiling
 fi
 
 echo "DIA-NN analysis complete. Results saved in $OUTDIR"
